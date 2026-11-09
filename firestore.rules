@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Administrador: custom claim `admin: true` (recomendado)
+    // o correo incluido en la lista. El claim se asigna con Admin SDK:
+    //   auth.setCustomUserClaims(uid, { admin: true })
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAllowlistedAdmin() {
+      return isSignedIn()
+        && request.auth.token.email in [
+          'admin@fundacionfer.org'
+        ];
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.admin == true
+        || isAllowlistedAdmin()
+      );
+    }
+
+    match /announcements/{announcementId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Lo que no tenga un match explícito queda denegado.
+    // Al agregar colecciones (metrics, scholars), repite el patrón de announcements.
+  }
+}
