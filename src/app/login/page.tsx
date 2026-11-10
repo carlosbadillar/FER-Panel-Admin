@@ -52,12 +52,6 @@ export default function LoginPage() {
             Acceso restringido a administradores autorizados
           </p>
 
-          {!isFirebaseConfigured && (
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-              Firebase aún no está configurado en este entorno. El acceso demo abre el panel con los datos del prototipo.
-            </div>
-          )}
-
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
               {error}
@@ -107,26 +101,6 @@ export default function LoginPage() {
               {isLoading ? 'Verificando...' : 'Acceder al Panel'}
             </button>
           </form>
-
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-gray-400">o</span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleDemo}
-            className="w-full border border-fer-blue text-fer-blue hover:bg-blue-50 font-semibold py-2.5 px-4 rounded-lg transition"
-          >
-            Acceso Demo
-          </button>
-          <p className="mt-2 text-center text-xs text-gray-400">
-            aca para presentar el dashboard a directivos, sin Firebase
-          </p>
 
           <p className="mt-6 text-center text-xs text-gray-400">
             Fundación Esposos Rodríguez © 2026
