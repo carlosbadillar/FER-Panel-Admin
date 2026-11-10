@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   collection,
-  query,
   limit,
   onSnapshot,
-  DocumentData,
-  QueryConstraint,
+  query,
+  queryEqual,
+  type DocumentData,
+  type Query,
+  type QueryConstraint,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -16,55 +18,46 @@ const EMPTY_CONSTRAINTS: QueryConstraint[] = [];
 export function useCollection<T = DocumentData>(
   collectionName: string,
   constraints: QueryConstraint[] = EMPTY_CONSTRAINTS,
-  maxItems: number = 50
+  maxItems = 50
 ) {
   const [data, setData] = useState<T[]>([]);
-  const [loading, setLoading] = useState(Boolean(db));
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Construimos la query en cada render, pero solo cambiamos la referencia
+  // guardada cuando la query es realmente distinta (queryEqual).
+  const nextQuery = query(collection(db, collectionName), ...constraints, limit(maxItems));
+  const queryRef = useRef<Query>(nextQuery);
+  if (!queryEqual(queryRef.current, nextQuery)) {
+    queryRef.current = nextQuery;
+  }
+  const stableQuery = queryRef.current;
+
   useEffect(() => {
-    if (!db) {
-      setData([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
+    setLoading(true);
 
-    let unsubscribe = () => {};
-
-    try {
-      const q = query(collection(db, collectionName), ...constraints, limit(maxItems));
-
-      unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          const items = snapshot.docs.map((docSnap) => ({
-            ...(docSnap.data() as Omit<T, 'id'>),
+    const unsubscribe = onSnapshot(
+      stableQuery,
+      (snapshot) => {
+        setData(
+          snapshot.docs.map((docSnap) => ({
+            ...docSnap.data(),
             id: docSnap.id,
-          })) as T[];
-          setData(items);
-          setError(null);
-          setLoading(false);
-        },
-        (err) => {
-          console.warn(`[FER Conecta] Firestore/${collectionName}:`, err.message);
-          setError(err.message);
-          setData([]);
-          setLoading(false);
-        }
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'No se pudo consultar Firestore';
-      console.warn(`[FER Conecta] Firestore/${collectionName}:`, message);
-      setError(message);
-      setData([]);
-      setLoading(false);
-    }
+          })) as T[]
+        );
+        setError(null);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn(`[FER Conecta] Firestore/${collectionName}:`, err.message);
+        setError(err.message);
+        setData([]);
+        setLoading(false);
+      }
+    );
 
-    return () => unsubscribe();
-    // Las restricciones deben ser un arreglo estable (el default del hook lo es).
-    // Un arreglo nuevo en cada render reabriría la suscripción.
-  }, [collectionName, maxItems, constraints]);
+    return unsubscribe;
+  }, [stableQuery, collectionName]);
 
   return { data, loading, error };
 }

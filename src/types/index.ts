@@ -42,12 +42,10 @@ export interface AdminUser {
   photoURL?: string;
 }
 
-/** Sesión del panel: usuario de Firebase o acceso demo local. */
 export interface AuthUser {
   uid: string;
   email: string | null;
   displayName: string | null;
-  isDemo: boolean;
 }
 
 export type DateFilter = '7d' | '30d' | '90d' | '12m';

@@ -5,61 +5,32 @@ import {
   useContext,
   useEffect,
   useState,
-  ReactNode,
+  type ReactNode,
 } from 'react';
-import { User, onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
-import { auth, isFirebaseConfigured } from '@/lib/firebase';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  type User,
+} from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import type { AuthUser } from '@/types';
-
-const DEMO_SESSION_KEY = 'fer-conecta-demo-session';
-
-const DEMO_USER: AuthUser = {
-  uid: 'demo-admin',
-  email: 'demo@fundacionfer.org',
-  displayName: 'Admin Fundación',
-  isDemo: true,
-};
 
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
-  isFirebaseConfigured: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signInDemo: () => void;
-  signOut: () => Promise<void>;
   error: string | null;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-function readDemoSession(): AuthUser | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.sessionStorage.getItem(DEMO_SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<AuthUser>;
-    if (parsed?.isDemo !== true || typeof parsed.uid !== 'string') return null;
-    return DEMO_USER;
-  } catch {
-    return null;
-  }
-}
-
-function persistDemoSession() {
-  window.sessionStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(DEMO_USER));
-}
-
-function clearDemoSession() {
-  if (typeof window === 'undefined') return;
-  window.sessionStorage.removeItem(DEMO_SESSION_KEY);
-}
 
 function toAuthUser(user: User): AuthUser {
   return {
     uid: user.uid,
     email: user.email,
     displayName: user.displayName,
-    isDemo: false,
   };
 }
 
@@ -78,10 +49,11 @@ function mapAuthError(err: unknown): string {
     case 'auth/invalid-api-key':
     case 'auth/invalid-app-credential':
     case 'auth/app-deleted':
-      return 'La configuración de Firebase no es válida. Revisa .env.local o entra con Acceso Demo.';
+      return 'La configuración de Firebase no es válida. Revisa .env.local.';
     case 'auth/network-request-failed':
+      return 'No se pudo contactar a Firebase. Revisa tu conexión.';
     case 'auth/too-many-requests':
-      return 'No se pudo contactar a Firebase. Puedes entrar con Acceso Demo Inmediato.';
+      return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
     default:
       return err instanceof Error ? err.message : 'Error de autenticación';
   }
@@ -93,83 +65,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!auth) {
-      setUser(readDemoSession());
-      setLoading(false);
-      return;
-    }
-
     const unsubscribe = onAuthStateChanged(
       auth,
       (firebaseUser) => {
-        if (firebaseUser) {
-          clearDemoSession();
-          setUser(toAuthUser(firebaseUser));
-        } else {
-          setUser(readDemoSession());
-        }
+        setUser(firebaseUser ? toAuthUser(firebaseUser) : null);
         setLoading(false);
       },
       (authError) => {
         console.warn('[FER Conecta] Auth no disponible:', authError);
-        setUser(readDemoSession());
+        setUser(null);
         setLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
   const signIn = async (email: string, password: string) => {
     setError(null);
-    if (!auth || !isFirebaseConfigured) {
-      const message =
-        'Firebase no está configurado. Completa .env.local o usa Acceso Demo Inmediato.';
-      setError(message);
-      throw new Error(message);
-    }
-
     try {
-      clearDemoSession();
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (err: unknown) {
-      const message = mapAuthError(err);
-      setError(message);
+    } catch (err) {
+      setError(mapAuthError(err));
       throw err;
     }
   };
 
-  const signInDemo = () => {
-    persistDemoSession();
-    setUser(DEMO_USER);
-    setError(null);
-    setLoading(false);
-  };
-
   const signOut = async () => {
-    clearDemoSession();
-    setUser(null);
-    if (auth) {
-      try {
-        await firebaseSignOut(auth);
-      } catch (err) {
-        console.warn('[FER Conecta] No se pudo cerrar la sesión de Firebase:', err);
-      }
-    }
+    await firebaseSignOut(auth);
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        isFirebaseConfigured,
-        signIn,
-        signInDemo,
-        signOut,
-        error,
-      }}
-    >
+    <AuthContext.Provider value={{ user, loading, error, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
