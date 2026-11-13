@@ -31,6 +31,8 @@ function toAuthUser(user: User): AuthUser {
     uid: user.uid,
     email: user.email,
     displayName: user.displayName,
+    photoURL: user.photoURL,
+    isAdmin: !user.isAnonymous,
   };
 }
 
@@ -77,7 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     );
-
     return unsubscribe;
   }, []);
 

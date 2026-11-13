@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "anuncios",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "audiencias", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "publicarEn", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
