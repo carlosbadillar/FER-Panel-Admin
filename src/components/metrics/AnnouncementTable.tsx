@@ -1,102 +1,109 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Users, ChevronRight } from 'lucide-react';
+import { Archive, Heart, Pencil, Send, Trash2, Users } from 'lucide-react';
 import clsx from 'clsx';
-import { MOCK_ANNOUNCEMENTS } from '@/data/announcements';
-import { useCollection } from '@/hooks/useFirestore';
-import type { Announcement, TableTab } from '@/types';
+import { useAnuncios } from '@/hooks/useAnuncios';
+import {
+  archivarAnuncio,
+  eliminarAnuncio,
+  publicarAnuncio,
+} from '@/services/anuncios';
+import type { Anuncio, EstadoAnuncio } from '@/types';
 
-interface AnnouncementRow {
-  id: string;
-  title: string;
-  description: string;
-  sendDate: string;
-  audienceCount: string;
-  audienceLabel: string;
-  opens: number;
-  totalSent: number;
-  successRate: number;
-  dotColor: string;
-  status: Announcement['status'];
-}
+type Tab = 'todos' | 'activos' | 'borradores' | 'archivados';
 
-const DOT_CLASS: Record<Announcement['colorDot'], string> = {
-  blue: 'bg-fer-blue',
-  green: 'bg-emerald-500',
-  orange: 'bg-amber-500',
-};
-
-const tabs: { key: TableTab; label: string }[] = [
+const tabs: { key: Tab; label: string }[] = [
   { key: 'todos', label: 'Todos' },
   { key: 'activos', label: 'Activos' },
+  { key: 'borradores', label: 'Borradores' },
   { key: 'archivados', label: 'Archivados' },
 ];
 
-function formatCount(value: number | string | undefined): string {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value.toLocaleString('es-MX');
+const ESTADO_LABEL: Record<EstadoAnuncio, string> = {
+  borrador: 'Borrador',
+  publicado: 'Publicado',
+  archivado: 'Archivado',
+};
+
+const ESTADO_BADGE: Record<EstadoAnuncio, string> = {
+  borrador: 'bg-gray-100 text-gray-600',
+  publicado: 'bg-emerald-50 text-emerald-700',
+  archivado: 'bg-amber-50 text-amber-700',
+};
+
+const ESTADO_DOT: Record<EstadoAnuncio, string> = {
+  borrador: 'bg-gray-300',
+  publicado: 'bg-emerald-500',
+  archivado: 'bg-amber-500',
+};
+
+function matchesTab(a: Anuncio, tab: Tab) {
+  if (tab === 'activos') return a.estado === 'publicado';
+  if (tab === 'borradores') return a.estado === 'borrador';
+  if (tab === 'archivados') return a.estado === 'archivado';
+  return true;
+}
+
+function formatFecha(a: Anuncio): string {
+  const d = a.fecha?.toDate?.();
+  if (!d) return '—';
+  return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+interface Props {
+  /** Abre el formulario de edición (AnuncioForm) para este anuncio */
+  onEdit?: (anuncio: Anuncio) => void;
+}
+
+export default function AnnouncementTable({ onEdit }: Props) {
+  const [activeTab, setActiveTab] = useState<Tab>('todos');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<Anuncio | null>(null);
+
+  const { data, loading, error } = useAnuncios();
+
+  const rows = useMemo(() => data.filter((a) => matchesTab(a, activeTab)), [data, activeTab]);
+
+  async function run(id: string, fn: () => Promise<void>) {
+    setActionError(null);
+    setBusyId(id);
+    try {
+      await fn();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo completar la acción.');
+    } finally {
+      setBusyId(null);
+    }
   }
-  if (typeof value === 'string' && value.trim()) return value;
-  return '0';
-}
 
-function toRow(item: Partial<Announcement> & { id: string }): AnnouncementRow | null {
-  if (!item.title || !item.description) return null;
+  function handlePublicar(a: Anuncio) {
+    const destino = a.audiencias.join(' y ');
+    if (!window.confirm(`El anuncio será visible para: ${destino}. ¿Publicar?`)) return;
+    run(a.id, async () => {
+      await publicarAnuncio(a.id);
+      setAviso(a); // recordatorio para mandar el push desde Firebase Messaging
+    });
+  }
 
-  const colorDot = item.colorDot ?? 'blue';
-  return {
-    id: item.id,
-    title: item.title,
-    description: item.description,
-    sendDate: item.sendDate ?? '—',
-    audienceCount: formatCount(item.audienceCount),
-    audienceLabel: item.audienceLabel ?? 'Destinatarios',
-    opens: typeof item.opens === 'number' ? item.opens : 0,
-    totalSent: typeof item.totalSent === 'number' ? item.totalSent : 0,
-    successRate: typeof item.successRate === 'number' ? item.successRate : 0,
-    dotColor: DOT_CLASS[colorDot] ?? DOT_CLASS.blue,
-    status: item.status ?? 'active',
-  };
-}
+  function handleArchivar(a: Anuncio) {
+    if (!window.confirm('El anuncio dejará de verse en la app. ¿Archivar?')) return;
+    run(a.id, () => archivarAnuncio(a.id));
+  }
 
-const mockRows = MOCK_ANNOUNCEMENTS.map((item) => toRow(item)).filter(
-  (row): row is AnnouncementRow => row !== null
-);
-
-function matchesTab(row: AnnouncementRow, tab: TableTab) {
-  if (tab === 'activos') return row.status === 'active';
-  if (tab === 'archivados') return row.status === 'archived';
-  return row.status !== 'draft';
-}
-
-export default function AnnouncementTable() {
-  const [activeTab, setActiveTab] = useState<TableTab>('todos');
-  const { data, loading, error } = useCollection<Announcement>('announcements');
-
-  const liveRows = useMemo(
-    () =>
-      [...data]
-        .sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''))
-        .map((item) => toRow(item))
-        .filter((row): row is AnnouncementRow => row !== null),
-    [data]
-  );
-
-  const usingLiveData = !loading && !error && liveRows.length > 0;
-  const source = usingLiveData ? liveRows : mockRows;
-  const rows = source.filter((row) => matchesTab(row, activeTab));
-  const showPrototypeFooter = !usingLiveData && activeTab === 'todos';
+  function handleEliminar(a: Anuncio) {
+    if (!window.confirm(`¿Eliminar «${a.titulo}» definitivamente? No se puede deshacer.`)) return;
+    run(a.id, () => eliminarAnuncio(a.id));
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-100">
       <div className="p-6 pb-0 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">
-            Rendimiento por Anuncio Reciente
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900">Anuncios</h3>
           <p className="text-sm text-gray-400 mt-0.5">
-            Efectividad y métricas desglosadas por comunicado oficial a becarios
+            Comunicados oficiales para becarios y aspirantes
           </p>
         </div>
         <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
@@ -118,24 +125,54 @@ export default function AnnouncementTable() {
         </div>
       </div>
 
+      {aviso && (
+        <div className="mx-6 mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <p className="font-semibold">«{aviso.titulo}» ya es visible en la app.</p>
+          <p className="mt-1">
+            Para avisar con una notificación, crea una campaña en Firebase → Messaging, tema{' '}
+            <strong>{aviso.audiencias.join(' y ')}</strong>, con el dato personalizado{' '}
+            <code className="font-mono">anuncioId</code> ={' '}
+            <code className="font-mono">{aviso.id}</code>.
+          </p>
+          <div className="mt-2 flex gap-3">
+            <button
+              type="button"
+              className="font-medium underline"
+              onClick={() => navigator.clipboard.writeText(aviso.id)}
+            >
+              Copiar ID
+            </button>
+            <button type="button" className="font-medium underline" onClick={() => setAviso(null)}>
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(error || actionError) && (
+        <p role="alert" className="mx-6 mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError ?? `No se pudieron cargar los anuncios: ${error}`}
+        </p>
+      )}
+
       <div className="overflow-x-auto mt-4">
         <table className="w-full">
           <thead>
             <tr className="border-y border-gray-100">
               <th className="text-left px-6 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Anuncio / Campaña
+                Anuncio
               </th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Fecha de Envío
+                Fecha
               </th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Audiencia Destino
+                Audiencia
               </th>
               <th className="text-center px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Aperturas
+                Likes
               </th>
               <th className="text-center px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                Tasa de Éxito
+                Estado
               </th>
               <th className="text-center px-4 py-3 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
                 Acciones
@@ -143,97 +180,126 @@ export default function AnnouncementTable() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {loading ? (
               <tr>
                 <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-400">
-                  No hay comunicados en esta vista.
+                  Cargando anuncios…
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-400">
+                  No hay anuncios en esta vista.
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-b border-gray-50 hover:bg-gray-50/50 transition"
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 ${row.dotColor} rounded-full flex-shrink-0`} />
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{row.title}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{row.description}</p>
+              rows.map((a) => {
+                const busy = busyId === a.id;
+                return (
+                  <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className={clsx('w-3 h-3 rounded-full flex-shrink-0', ESTADO_DOT[a.estado])} />
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {a.titulo}
+                            {a.prioridad === 'urgente' && (
+                              <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-600">
+                                Urgente
+                              </span>
+                            )}
+                            {a.isFeatured && (
+                              <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-fer-blue">
+                                Destacado
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{a.resumen}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-sm text-gray-500">{row.sendDate}</td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                      <Users className="w-4 h-4 text-gray-400" />
-                      <span className="font-medium">{row.audienceCount}</span>
-                      <span className="text-gray-400">{row.audienceLabel}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="text-sm font-semibold text-gray-900">
-                      {row.opens.toLocaleString('es-MX')}
-                    </span>
-                    <span className="text-sm text-gray-400">
-                      {' / '}
-                      {row.totalSent.toLocaleString('es-MX')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="badge-green">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2.5}
-                          d="M5 10l7-7m0 0l7 7m-7-7v18"
-                        />
-                      </svg>
-                      {row.successRate}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 text-sm text-fer-blue hover:text-fer-blue-dark font-medium transition"
-                    >
-                      Ver Detalles
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      {formatFecha(a)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                        <Users className="w-4 h-4 text-gray-400" />
+                        <span className="capitalize">{a.audiencias.join(', ')}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-600">
+                        <Heart className="w-4 h-4 text-gray-400" />
+                        {(a.likes ?? 0).toLocaleString('es-MX')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span
+                        className={clsx(
+                          'inline-block rounded-full px-2.5 py-0.5 text-xs font-medium',
+                          ESTADO_BADGE[a.estado]
+                        )}
+                      >
+                        {ESTADO_LABEL[a.estado]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center justify-center gap-1">
+                        {onEdit && (
+                          <button
+                            type="button"
+                            title="Editar"
+                            disabled={busy}
+                            onClick={() => onEdit(a)}
+                            className="p-1.5 rounded text-gray-400 hover:text-fer-blue hover:bg-gray-100 transition disabled:opacity-40"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
+                        {a.estado !== 'publicado' && (
+                          <button
+                            type="button"
+                            title={a.estado === 'archivado' ? 'Republicar' : 'Publicar'}
+                            disabled={busy}
+                            onClick={() => handlePublicar(a)}
+                            className="p-1.5 rounded text-gray-400 hover:text-emerald-600 hover:bg-gray-100 transition disabled:opacity-40"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                        )}
+                        {a.estado === 'publicado' && (
+                          <button
+                            type="button"
+                            title="Archivar"
+                            disabled={busy}
+                            onClick={() => handleArchivar(a)}
+                            className="p-1.5 rounded text-gray-400 hover:text-amber-600 hover:bg-gray-100 transition disabled:opacity-40"
+                          >
+                            <Archive className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title="Eliminar"
+                          disabled={busy}
+                          onClick={() => handleEliminar(a)}
+                          className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-gray-100 transition disabled:opacity-40"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      <div className="px-6 py-4 flex items-center justify-between border-t border-gray-100">
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-          {showPrototypeFooter
-            ? 'Mostrando 3 de 24 comunicados enviados este semestre'
-            : `Mostrando ${rows.length} comunicado${rows.length === 1 ? '' : 's'}`}
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <button type="button" className="text-gray-300 cursor-not-allowed">
-            Anterior
-          </button>
-          <span className="px-3 py-1 bg-gray-100 rounded font-medium text-gray-700">1</span>
-          <span className="text-gray-400">{showPrototypeFooter ? 'de 8' : 'de 1'}</span>
-          <button
-            type="button"
-            className={
-              showPrototypeFooter
-                ? 'text-gray-600 hover:text-gray-900 font-medium transition'
-                : 'text-gray-300 cursor-not-allowed font-medium'
-            }
-          >
-            Siguiente
-          </button>
-        </div>
+      <div className="px-6 py-4 flex items-center gap-2 text-sm text-gray-400 border-t border-gray-100">
+        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+        Mostrando {rows.length} anuncio{rows.length === 1 ? '' : 's'}
       </div>
     </div>
   );
