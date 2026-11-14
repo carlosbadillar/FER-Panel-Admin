@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Archive, Heart, Pencil, Send, Trash2, Users } from 'lucide-react';
+import { Archive, CalendarClock, Heart, Pencil, Search, Send, Trash2, Users } from 'lucide-react';
 import clsx from 'clsx';
 import { useAnuncios } from '@/hooks/useAnuncios';
 import {
@@ -9,13 +9,15 @@ import {
   eliminarAnuncio,
   publicarAnuncio,
 } from '@/services/anuncios';
+import { formatFechaCorta, formatFechaHora, isProgramado, isVisible, toDate } from '@/lib/anuncioUtils';
 import type { Anuncio, EstadoAnuncio } from '@/types';
 
-type Tab = 'todos' | 'activos' | 'borradores' | 'archivados';
+type Tab = 'todos' | 'activos' | 'programados' | 'borradores' | 'archivados';
 
 const tabs: { key: Tab; label: string }[] = [
   { key: 'todos', label: 'Todos' },
   { key: 'activos', label: 'Activos' },
+  { key: 'programados', label: 'Programados' },
   { key: 'borradores', label: 'Borradores' },
   { key: 'archivados', label: 'Archivados' },
 ];
@@ -39,32 +41,47 @@ const ESTADO_DOT: Record<EstadoAnuncio, string> = {
 };
 
 function matchesTab(a: Anuncio, tab: Tab) {
-  if (tab === 'activos') return a.estado === 'publicado';
+  if (tab === 'activos') return isVisible(a);
+  if (tab === 'programados') return isProgramado(a);
   if (tab === 'borradores') return a.estado === 'borrador';
   if (tab === 'archivados') return a.estado === 'archivado';
   return true;
 }
 
-function formatFecha(a: Anuncio): string {
-  const d = a.fecha?.toDate?.();
-  if (!d) return '—';
-  return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+function matchesSearch(a: Anuncio, q: string) {
+  if (!q) return true;
+  const hay = `${a.titulo} ${a.resumen} ${(a.tags ?? []).join(' ')}`.toLowerCase();
+  return hay.includes(q.toLowerCase());
 }
 
 interface Props {
   /** Abre el formulario de edición (AnuncioForm) para este anuncio */
   onEdit?: (anuncio: Anuncio) => void;
+  /** Modo compacto para el dashboard: sin pestañas ni buscador, solo los N más recientes */
+  limit?: number;
+  title?: string;
+  subtitle?: string;
 }
 
-export default function AnnouncementTable({ onEdit }: Props) {
+export default function AnnouncementTable({
+  onEdit,
+  limit,
+  title = 'Anuncios',
+  subtitle = 'Comunicados oficiales para becarios y aspirantes',
+}: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('todos');
+  const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<Anuncio | null>(null);
 
   const { data, loading, error } = useAnuncios();
+  const compact = typeof limit === 'number';
 
-  const rows = useMemo(() => data.filter((a) => matchesTab(a, activeTab)), [data, activeTab]);
+  const rows = useMemo(() => {
+    const filtered = data.filter((a) => matchesTab(a, activeTab) && matchesSearch(a, search.trim()));
+    return compact ? filtered.slice(0, limit) : filtered;
+  }, [data, activeTab, search, compact, limit]);
 
   async function run(id: string, fn: () => Promise<void>) {
     setActionError(null);
@@ -101,10 +118,19 @@ export default function AnnouncementTable({ onEdit }: Props) {
     <div className="bg-white rounded-xl border border-gray-100">
       <div className="p-6 pb-0 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Anuncios</h3>
-          <p className="text-sm text-gray-400 mt-0.5">
-            Comunicados oficiales para becarios y aspirantes
-          </p>
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <p className="text-sm text-gray-400 mt-0.5">{subtitle}</p>
+        </div>
+        {!compact && (
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+        <div className="relative">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar anuncio o etiqueta…"
+            className="input pl-9 py-1.5 w-56"
+          />
         </div>
         <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
           {tabs.map((tab) => (
@@ -123,6 +149,8 @@ export default function AnnouncementTable({ onEdit }: Props) {
             </button>
           ))}
         </div>
+        </div>
+        )}
       </div>
 
       {aviso && (
@@ -219,7 +247,7 @@ export default function AnnouncementTable({ onEdit }: Props) {
                       </div>
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap">
-                      {formatFecha(a)}
+                      {formatFechaCorta(toDate(a.fecha))}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-1.5 text-sm text-gray-600">
@@ -234,6 +262,15 @@ export default function AnnouncementTable({ onEdit }: Props) {
                       </span>
                     </td>
                     <td className="px-4 py-4 text-center">
+                      {isProgramado(a) ? (
+                        <span
+                          title={`Se publica el ${formatFechaHora(toDate(a.publicarEn))}`}
+                          className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-fer-blue whitespace-nowrap"
+                        >
+                          <CalendarClock className="w-3 h-3" />
+                          {formatFechaHora(toDate(a.publicarEn))}
+                        </span>
+                      ) : (
                       <span
                         className={clsx(
                           'inline-block rounded-full px-2.5 py-0.5 text-xs font-medium',
@@ -242,6 +279,7 @@ export default function AnnouncementTable({ onEdit }: Props) {
                       >
                         {ESTADO_LABEL[a.estado]}
                       </span>
+                      )}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center justify-center gap-1">
@@ -256,10 +294,16 @@ export default function AnnouncementTable({ onEdit }: Props) {
                             <Pencil className="w-4 h-4" />
                           </button>
                         )}
-                        {a.estado !== 'publicado' && (
+                        {(a.estado !== 'publicado' || isProgramado(a)) && (
                           <button
                             type="button"
-                            title={a.estado === 'archivado' ? 'Republicar' : 'Publicar'}
+                            title={
+                              isProgramado(a)
+                                ? 'Publicar ahora'
+                                : a.estado === 'archivado'
+                                  ? 'Republicar'
+                                  : 'Publicar'
+                            }
                             disabled={busy}
                             onClick={() => handlePublicar(a)}
                             className="p-1.5 rounded text-gray-400 hover:text-emerald-600 hover:bg-gray-100 transition disabled:opacity-40"
@@ -300,6 +344,7 @@ export default function AnnouncementTable({ onEdit }: Props) {
       <div className="px-6 py-4 flex items-center gap-2 text-sm text-gray-400 border-t border-gray-100">
         <span className="w-2 h-2 bg-emerald-500 rounded-full" />
         Mostrando {rows.length} anuncio{rows.length === 1 ? '' : 's'}
+        {compact && data.length > rows.length && ` de ${data.length}`}
       </div>
     </div>
   );

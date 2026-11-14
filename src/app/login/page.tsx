@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
@@ -8,8 +8,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn, error } = useAuth();
+  const { user, signIn, error } = useAuth();
   const router = useRouter();
+
+  // Si ya hay sesión de admin, ir directo al panel
+  useEffect(() => {
+    if (user?.isAdmin) router.replace('/dashboard');
+  }, [user, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

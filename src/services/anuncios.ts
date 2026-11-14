@@ -42,16 +42,21 @@ function campos(input: AnuncioInput) {
   };
 }
 
+/**
+ * @param publicarEn Opcional. Si se manda una fecha futura junto con publicar=true,
+ * el anuncio queda "programado": la app solo debe mostrarlo cuando publicarEn <= ahora.
+ */
 export async function crearAnuncio(
   input: AnuncioInput,
   uid: string,
-  publicar: boolean
+  publicar: boolean,
+  publicarEn?: Date
 ): Promise<string> {
   const ref = doc(collection(db, 'anuncios'));
   await setDoc(ref, {
     ...campos(input),
     estado: publicar ? 'publicado' : 'borrador',
-    publicarEn: serverTimestamp(),
+    publicarEn: publicarEn ? Timestamp.fromDate(publicarEn) : serverTimestamp(),
     likes: 0,
     creadoPor: uid,
     creadoEn: serverTimestamp(),
@@ -60,10 +65,16 @@ export async function crearAnuncio(
   return ref.id;
 }
 
-// No cambia el estado ni publicarEn (editar un publicado no lo "re-publica")
-export async function actualizarAnuncio(id: string, input: AnuncioInput): Promise<void> {
+// No cambia el estado. publicarEn solo cambia si se manda explícitamente
+// (p. ej. para reprogramar); editar un publicado no lo "re-publica".
+export async function actualizarAnuncio(
+  id: string,
+  input: AnuncioInput,
+  publicarEn?: Date
+): Promise<void> {
   await updateDoc(doc(db, 'anuncios', id), {
     ...campos(input),
+    ...(publicarEn ? { publicarEn: Timestamp.fromDate(publicarEn) } : {}),
     actualizadoEn: serverTimestamp(),
   });
 }

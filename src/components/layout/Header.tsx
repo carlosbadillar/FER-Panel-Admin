@@ -10,9 +10,7 @@ export default function Header() {
         <h2 className="text-sm font-semibold text-gray-700">
           Portal de Gestión
         </h2>
-        <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-medium rounded-full border border-emerald-200">
-          Fundación Educación
-        </span>
+    
       </div>
 
       {/* Right */}

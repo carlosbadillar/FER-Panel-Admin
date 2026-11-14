@@ -11,6 +11,9 @@
 }
 
 @layer components {
+  .input {
+    @apply w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-fer-blue/30 focus:border-fer-blue outline-none transition;
+  }
   .kpi-card {
     @apply bg-white rounded-xl border border-gray-100 p-5 relative overflow-hidden transition-shadow hover:shadow-md;
   }
