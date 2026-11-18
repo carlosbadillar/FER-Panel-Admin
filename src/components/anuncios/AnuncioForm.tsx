@@ -112,6 +112,16 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
     setAudiencias((prev) => (prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]));
   }
 
+  function alternarEvento(activo: boolean) {
+    setEsEvento(activo);
+    if (activo && !fechaEvento) {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(10, 0, 0, 0);
+      setFechaEvento(toDatetimeLocal(d));
+    }
+  }
+
   function agregarImagen() {
     const url = nuevaImagen.trim();
     if (!url) return;
@@ -340,7 +350,7 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
               <input
                 type="checkbox"
                 checked={esEvento}
-                onChange={(e) => setEsEvento(e.target.checked)}
+                onChange={(e) => alternarEvento(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-fer-blue focus:ring-fer-blue"
               />
               <CalendarClock className="w-4 h-4 text-gray-400" /> Este anuncio es un evento
@@ -356,13 +366,22 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
                       className="input"
                     />
                   </Field>
-                  <Field label="Fin del evento" hint="Opcional.">
+                  <Field label="Fin del evento" hint="Opcional. Si lo usas, completa también la hora.">
                     <input
                       type="datetime-local"
                       value={fechaFin}
                       onChange={(e) => setFechaFin(e.target.value)}
                       className="input"
                     />
+                    {fechaFin && (
+                      <button
+                        type="button"
+                        onClick={() => setFechaFin('')}
+                        className="mt-1 text-xs text-gray-400 hover:text-gray-600"
+                      >
+                        Quitar fin
+                      </button>
+                    )}
                   </Field>
                 </div>
                 <Field label="Lugar" hint="Opcional." count={`${lugar.length}/${MAX_LUGAR}`}>
