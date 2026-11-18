@@ -23,6 +23,9 @@ export interface AnuncioInput {
   prioridad: Prioridad;
   imagenPrincipal: string | null;
   imagenesSecundarias: string[];
+  fechaEvento: Date | null;
+  fechaFin: Date | null;
+  lugar: string | null;
 }
 
 function campos(input: AnuncioInput) {
@@ -39,6 +42,9 @@ function campos(input: AnuncioInput) {
     prioridad: input.prioridad,
     imagenPrincipal: input.imagenPrincipal,
     imagenesSecundarias: input.imagenesSecundarias,
+    fechaEvento: input.fechaEvento ? Timestamp.fromDate(input.fechaEvento) : null,
+    fechaFin: input.fechaFin ? Timestamp.fromDate(input.fechaFin) : null,
+    lugar: input.lugar,
   };
 }
 

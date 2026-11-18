@@ -16,8 +16,8 @@ export interface Anuncio {
   fecha: Timestamp;
   autor: string;
   autorFotoUrl: string | null;
-  imagenPrincipal: string | null;     // URL https externa
-  imagenesSecundarias: string[];      // URLs https externas
+  imagenPrincipal: string | null;     // URL 
+  imagenesSecundarias: string[];      // URLs
   likes: number;
   audiencias: Audiencia[];
   estado: EstadoAnuncio;
@@ -26,6 +26,9 @@ export interface Anuncio {
   creadoPor: string;
   creadoEn: Timestamp;
   actualizadoEn: Timestamp;
+  fechaEvento?: Timestamp | null;   // inicio, con hora
+  fechaFin?: Timestamp | null;
+  lugar?: string | null;
 }
 
 export interface AuthUser {

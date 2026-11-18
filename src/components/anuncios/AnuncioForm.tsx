@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { actualizarAnuncio, crearAnuncio, type AnuncioInput } from '@/services/anuncios';
 import { isProgramado, toDate, toDateInput, toDatetimeLocal } from '@/lib/anuncioUtils';
 import { AUDIENCIAS, type Anuncio, type Audiencia, type Prioridad } from '@/types';
+import type { Timestamp } from 'firebase/firestore';
 
 // Límites alineados con firestore.rules → anuncioValido()
 const MAX_TITULO = 120;
@@ -14,6 +15,12 @@ const MAX_RESUMEN = 300;
 const MAX_DESCRIPCION = 10000;
 const MAX_TAGS = 10;
 const MAX_IMAGENES = 10;
+const MAX_LUGAR = 200;
+
+function aDatetimeLocal(ts: Timestamp | null | undefined) {
+  const d = toDate(ts);
+  return d ? toDatetimeLocal(d) : '';
+}
 
 const AUDIENCIA_LABEL: Record<Audiencia, string> = {
   becarios: 'Becarios',
@@ -69,6 +76,12 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [esEvento, setEsEvento] = useState(
+    !!anuncio?.fechaEvento || (anuncio?.tags?.[0] ?? '').toLowerCase().includes('evento')
+  );
+  const [fechaEvento, setFechaEvento] = useState(aDatetimeLocal(anuncio?.fechaEvento));
+  const [fechaFin, setFechaFin] = useState(aDatetimeLocal(anuncio?.fechaFin));
+  const [lugar, setLugar] = useState(anuncio?.lugar ?? '');
 
   // Cerrar con Escape
   useEffect(() => {
@@ -88,6 +101,11 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
         )
       ),
     [tagsText]
+  );
+    // La app reconoce un evento por su PRIMER tag; si es evento, se garantiza que sea "evento".
+  const tagsFinal = useMemo(
+    () => (esEvento ? ['evento', ...tags.filter((t) => t !== 'evento')] : tags),
+    [esEvento, tags]
   );
 
   function toggleAudiencia(a: Audiencia) {
@@ -110,7 +128,7 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
     if (resumen.length > MAX_RESUMEN) return `El resumen admite máximo ${MAX_RESUMEN} caracteres.`;
     if (descripcion.length > MAX_DESCRIPCION)
       return `La descripción admite máximo ${MAX_DESCRIPCION} caracteres.`;
-    if (tags.length > MAX_TAGS) return `Máximo ${MAX_TAGS} etiquetas.`;
+    if (tagsFinal.length > MAX_TAGS) return `Máximo ${MAX_TAGS} etiquetas.`;
     if (audiencias.length === 0) return 'Selecciona al menos una audiencia.';
     if (!fecha) return 'La fecha es obligatoria.';
     if (imagenPrincipal.trim() && !isUrl(imagenPrincipal.trim()))
@@ -121,6 +139,17 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
       const d = new Date(publicarEn);
       if (isNaN(d.getTime())) return 'Fecha de programación inválida.';
       if (d <= new Date()) return 'La fecha de programación debe ser futura.';
+    }
+    if (esEvento) {
+      if (!fechaEvento) return 'La fecha y hora de inicio del evento es obligatoria.';
+      const inicio = new Date(fechaEvento);
+      if (isNaN(inicio.getTime())) return 'Fecha de inicio del evento inválida.';
+      if (fechaFin) {
+        const fin = new Date(fechaFin);
+        if (isNaN(fin.getTime())) return 'Fecha de fin del evento inválida.';
+        if (fin <= inicio) return 'El fin del evento debe ser posterior al inicio.';
+      }
+      if (lugar.length > MAX_LUGAR) return `El lugar admite máximo ${MAX_LUGAR} caracteres.`;
     }
     return null;
   }
@@ -135,7 +164,7 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
       titulo,
       resumen,
       descripcion,
-      tags,
+      tags: tagsFinal,
       isFeatured,
       // mediodía local para que la fecha no se recorra por zona horaria
       fecha: new Date(`${fecha}T12:00:00`),
@@ -145,6 +174,9 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
       prioridad,
       imagenPrincipal: imagenPrincipal.trim() || null,
       imagenesSecundarias: imagenes,
+      fechaEvento: esEvento ? new Date(fechaEvento) : null,
+      fechaFin: esEvento && fechaFin ? new Date(fechaFin) : null,
+      lugar: esEvento && lugar.trim() ? lugar.trim() : null,
     };
 
     setSaving(true);
@@ -289,7 +321,7 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <Field label="Fecha del evento / anuncio" required>
+            <Field label="Fecha del anuncio" required>
               <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="input" />
             </Field>
             <Field label="Etiquetas" hint="Separadas por coma." count={`${tags.length}/${MAX_TAGS}`}>
@@ -301,7 +333,53 @@ export default function AnuncioForm({ anuncio, onClose, onSaved }: Props) {
               />
             </Field>
           </div>
-
+          
+          {/* Evento */}
+          <div className="rounded-xl border border-gray-100 p-4 space-y-4">
+            <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={esEvento}
+                onChange={(e) => setEsEvento(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-fer-blue focus:ring-fer-blue"
+              />
+              <CalendarClock className="w-4 h-4 text-gray-400" /> Este anuncio es un evento
+            </label>
+            {esEvento && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <Field label="Inicio del evento" required hint="Hora de tu zona horaria.">
+                    <input
+                      type="datetime-local"
+                      value={fechaEvento}
+                      onChange={(e) => setFechaEvento(e.target.value)}
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="Fin del evento" hint="Opcional.">
+                    <input
+                      type="datetime-local"
+                      value={fechaFin}
+                      onChange={(e) => setFechaFin(e.target.value)}
+                      className="input"
+                    />
+                  </Field>
+                </div>
+                <Field label="Lugar" hint="Opcional." count={`${lugar.length}/${MAX_LUGAR}`}>
+                  <input
+                    value={lugar}
+                    onChange={(e) => setLugar(e.target.value)}
+                    maxLength={MAX_LUGAR}
+                    placeholder="Ej. Campus norte, salón 3"
+                    className="input"
+                  />
+                </Field>
+                <p className="text-xs text-gray-400">
+                  Al guardar, "evento" queda como primera etiqueta; así la app muestra "Agregar a calendario".
+                </p>
+              </>
+            )}
+          </div>
           <label className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer select-none">
             <input
               type="checkbox"
